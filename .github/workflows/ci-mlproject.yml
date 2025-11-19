@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mlflow==2.16.0
+          pip install mlflow==2.16.0 pyyaml
 
       # 5. Set MLflow Tracking URI (lokal -> ./mlruns)
       - name: Set MLflow Tracking URI
@@ -60,11 +60,12 @@ jobs:
           tracking_uri = "file:" + str((Path.cwd() / "mlruns").resolve())
           mlflow.set_tracking_uri(tracking_uri)
 
-          # ambil experiment default (id 0) atau pakai nama
           client = mlflow.tracking.MlflowClient()
           exp = client.get_experiment_by_name("genre-game-mlproject")
           if exp is None:
+              # fallback ke default experiment
               exp = client.get_experiment("0")
+
           runs = client.search_runs(
               [exp.experiment_id],
               order_by=["attributes.start_time DESC"],
@@ -78,21 +79,19 @@ jobs:
               f.write(f"run_id={run_id}\n")
           PY
 
-      # 8. Install Python dependencies (untuk inference/test lokal, Skilled)
+      # 8. Install Python dependencies (opsional, untuk inference/test lokal, Skilled)
       - name: Install Python dependencies
         working-directory: MLProject
         run: |
-          conda_file="conda.yaml"
-          pip install -r <(python - << 'PY'
-          import yaml
-          import sys
+          python - << 'PY'
+          import yaml, subprocess
           env = yaml.safe_load(open("conda.yaml"))
           pkgs = [p for p in env.get("dependencies", []) if isinstance(p, dict) and "pip" in p]
           if pkgs:
-              for pkg in pkgs[0]["pip"]:
-                  print(pkg)
+              pip_pkgs = pkgs[0]["pip"]
+              print("Installing:", pip_pkgs)
+              subprocess.check_call(["pip", "install", *pip_pkgs])
           PY
-          )
 
       # 9. Upload artefak ke repositori (Skilled)
       - name: Upload MLflow artifacts
@@ -101,30 +100,60 @@ jobs:
           name: mlflow_mlruns
           path: MLProject/mlruns
 
-      # 10. Build Docker Model (Advanced)
-      - name: Build Docker Model
+      # 10. Generate Docker context from MLflow model (Opsi 1)
+      - name: Generate MLflow Docker context
         working-directory: MLProject
         env:
           RUN_ID: ${{ steps.get_run.outputs.run_id }}
         run: |
-          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model:latest"
-          echo "Building docker image: $IMAGE_NAME from run_id=$RUN_ID"
-          mlflow models build-docker -m "runs:/$RUN_ID/model" -n "$IMAGE_NAME"
+          echo "Generate Dockerfile from MLflow model runs:/$RUN_ID/model"
+          mlflow models generate-dockerfile \
+            -m "runs:/$RUN_ID/model" \
+            -d docker_ctx \
+            --env-manager local
 
-      # 11. Log in to Docker Hub
+      # 11. Patch Dockerfile base image (ganti dari image default MLflow)
+      - name: Patch Dockerfile base image
+        working-directory: MLProject
+        run: |
+          echo "Before patch:"
+          head -n 5 docker_ctx/Dockerfile || true
+
+          # Ganti baris pertama menjadi base image Python resmi
+          sed -i '1s|.*|FROM python:3.11-slim|' docker_ctx/Dockerfile
+
+          # (opsional) hapus baris yang mengandung python3.8 kalau ada
+          sed -i '/python3.8/d' docker_ctx/Dockerfile || true
+
+          echo "After patch:"
+          head -n 10 docker_ctx/Dockerfile || true
+
+      # 12. Build Docker Image (Advanced)
+      - name: Build Docker Image
+        working-directory: MLProject
+        env:
+          IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model
+        run: |
+          IMAGE_NAME="$IMAGE_BASE:latest"
+          echo "Building docker image: $IMAGE_NAME"
+          docker build -t "$IMAGE_NAME" docker_ctx
+
+      # 13. Log in to Docker Hub
       - name: Log in to Docker Hub
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      # 12. Tag Docker Image (tambahkan tag pakai commit SHA, optional)
+      # 14. Tag Docker Image (tambahkan tag pakai commit SHA, optional)
       - name: Tag Docker Image
+        env:
+          IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model
         run: |
-          IMAGE_BASE="${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model"
           docker tag "$IMAGE_BASE:latest" "$IMAGE_BASE:${{ github.sha }}"
 
-      # 13. Push Docker Image (Advanced)
+      # 15. Push Docker Image (Advanced)
       - name: Push Docker Image
+        env:
+          IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model
         run: |
-          IMAGE_BASE="${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model"
           docker push "$IMAGE_BASE:latest"
           docker push "$IMAGE_BASE:${{ github.sha }}"
