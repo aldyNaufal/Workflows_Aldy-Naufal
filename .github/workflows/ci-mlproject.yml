@@ -115,7 +115,7 @@ jobs:
           # file yang baru kita zip barusan
           target: MLProject/mlruns_${{ github.run_id }}.zip
           # base64 dari JSON service account
-          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_B64 }}
+          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
           # ID folder Google Drive tujuan
           parent_folder_id: ${{ secrets.GDRIVE_FOLDER_ID }}
           # opsional: auto replace file dengan nama sama
