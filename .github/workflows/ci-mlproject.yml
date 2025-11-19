@@ -100,6 +100,16 @@ jobs:
           name: mlflow_mlruns
           path: MLProject/mlruns
 
+      # 9b. Upload MLflow artifacts ke Google Drive
+      - name: Upload MLflow artifacts to Google Drive
+        uses: adityaprasad2001/gdrive-upload-action@v1.0.4
+        with:
+          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
+          filename: MLProject/mlruns
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
+          overwrite: "true"
+
+
       # 10. Generate Docker context from MLflow model (Opsi 1)
       - name: Generate MLflow Docker context
         working-directory: MLProject
