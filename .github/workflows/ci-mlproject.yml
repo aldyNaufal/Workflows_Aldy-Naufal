@@ -100,49 +100,23 @@ jobs:
           name: mlflow_mlruns
           path: MLProject/mlruns
 
-      # 9a. Archive latest MLflow run artifacts (lebih kecil dari full mlruns)
-      - name: Archive latest MLflow run artifacts
-        working-directory: MLProject
-        env:
-          RUN_ID: ${{ steps.get_run.outputs.run_id }}
+      # [TEST] Setup rclone dan cek koneksi ke Google Drive
+      - name: Setup rclone and test rclone remote
         run: |
-          echo "Latest RUN_ID: $RUN_ID"
+          # 1. Decode rclone.conf dari secret
+          echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > rclone.conf
 
-          # Cari EXP_ID (karena struktur mlflow: mlruns/<exp_id>/<run_id>/...)
-          EXP_ID=$(python - << 'PY'
-          from pathlib import Path
-          import os
-          run_id = os.environ["RUN_ID"]
-          mlruns = Path("mlruns")
-          for exp_dir in mlruns.iterdir():
-              if not exp_dir.is_dir():
-                  continue
-              candidate = exp_dir / run_id
-              if candidate.exists():
-                  print(exp_dir.name)
-                  break
-          PY
-          )
-
-          echo "Found EXP_ID: $EXP_ID"
-          TARGET_DIR="mlruns/$EXP_ID/$RUN_ID"
-          echo "Target run dir: $TARGET_DIR"
-          ls -R "$TARGET_DIR"
-
-          # Install zip dan arsipkan hanya artifacts
+          # 2. Install rclone
           sudo apt-get update
-          sudo apt-get install -y zip
-          zip -r "mlflow_run_${RUN_ID}.zip" "$TARGET_DIR/artifacts"
+          sudo apt-get install -y rclone
 
-      # 9b. Upload to Google Drive with adityak74/google-drive-upload-git-action
-      - name: Upload latest MLflow run to Google Drive
-        uses: adityak74/google-drive-upload-git-action@main
-        with:
-          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}       # base64 JSON
-          filename: "MLProject/mlflow_run_${{ steps.get_run.outputs.run_id }}.zip"
-          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}            # folder tujuan
-          name: "mlflow_run_${{ steps.get_run.outputs.run_id }}.zip"  # optional nama di GDrive
-          overwrite: "true"                                   # optional, biar ketimpa kalau nama sama
+          # 3. Lihat daftar remote di config (harus muncul sesuatu seperti "gdrive:")
+          echo "=== List remotes ==="
+          rclone --config rclone.conf listremotes
+
+          # 4. (Opsional) list folder teratas di Drive (ganti 'gdrive:' dengan nama remote kamu)
+          echo "=== Top-level on remote ==="
+          rclone --config rclone.conf lsd gdrive: || true
 
 
 
