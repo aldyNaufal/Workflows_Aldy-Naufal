@@ -100,28 +100,50 @@ jobs:
           name: mlflow_mlruns
           path: MLProject/mlruns
 
-      # 9a. Archive MLflow mlruns jadi satu file zip
-      - name: Archive MLflow mlruns
+      # 9a. Archive latest MLflow run artifacts (lebih kecil dari full mlruns)
+      - name: Archive latest MLflow run artifacts
+        working-directory: MLProject
+        env:
+          RUN_ID: ${{ steps.get_run.outputs.run_id }}
         run: |
+          echo "Latest RUN_ID: $RUN_ID"
+
+          # Cari EXP_ID (karena struktur mlflow: mlruns/<exp_id>/<run_id>/...)
+          EXP_ID=$(python - << 'PY'
+          from pathlib import Path
+          import os
+          run_id = os.environ["RUN_ID"]
+          mlruns = Path("mlruns")
+          for exp_dir in mlruns.iterdir():
+              if not exp_dir.is_dir():
+                  continue
+              candidate = exp_dir / run_id
+              if candidate.exists():
+                  print(exp_dir.name)
+                  break
+          PY
+          )
+
+          echo "Found EXP_ID: $EXP_ID"
+          TARGET_DIR="mlruns/$EXP_ID/$RUN_ID"
+          echo "Target run dir: $TARGET_DIR"
+          ls -R "$TARGET_DIR"
+
+          # Install zip dan arsipkan hanya artifacts
           sudo apt-get update
           sudo apt-get install -y zip
-          cd MLProject
-          zip -r "mlruns_${GITHUB_RUN_ID}.zip" mlruns
+          zip -r "mlflow_run_${RUN_ID}.zip" "$TARGET_DIR/artifacts"
 
-      # 9b. Upload Artifacts TO Google Drive
-      - name: Upload Artifacts TO Google Drive
-        uses: Jumbo810/Upload_Github_Artifacts_TO_GDrive@v2.3.1
+      # 9b. Upload to Google Drive with adityak74/google-drive-upload-git-action
+      - name: Upload latest MLflow run to Google Drive
+        uses: adityak74/google-drive-upload-git-action@main
         with:
-          # file yang baru kita zip barusan
-          target: MLProject/mlruns_${{ github.run_id }}.zip
-          # base64 dari JSON service account
-          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
-          # ID folder Google Drive tujuan
-          parent_folder_id: ${{ secrets.GDRIVE_FOLDER_ID }}
-          # opsional: auto replace file dengan nama sama
-          override: true
-          # opsional: taruh di subfolder per-branch
-          child_folder: mlruns/${{ github.ref_name }}
+          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}       # base64 JSON
+          filename: "MLProject/mlflow_run_${{ steps.get_run.outputs.run_id }}.zip"
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}            # folder tujuan
+          name: "mlflow_run_${{ steps.get_run.outputs.run_id }}.zip"  # optional nama di GDrive
+          overwrite: "true"                                   # optional, biar ketimpa kalau nama sama
+
 
 
       # 10. Generate Docker context from MLflow model (Opsi 1)
