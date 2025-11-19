@@ -93,32 +93,26 @@ jobs:
               subprocess.check_call(["pip", "install", *pip_pkgs])
           PY
 
-      # 9. Upload artefak ke repositori (Skilled)
+      # 9. Upload artefak ke repositori (GitHub artifact)
       - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mlflow_mlruns
           path: MLProject/mlruns
 
-      # [TEST] Setup rclone dan cek koneksi ke Google Drive
-      - name: Setup rclone and test rclone remote
+      # 9b. Upload MLflow tracking (mlruns) ke Google Drive dengan rclone (tanpa zip)
+      - name: Upload MLflow mlruns to Google Drive with rclone
         run: |
-          # 1. Decode rclone.conf dari secret
+          # Decode rclone.conf dari secret
           echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > rclone.conf
 
-          # 2. Install rclone
+          # Install rclone
           sudo apt-get update
           sudo apt-get install -y rclone
 
-          # 3. Lihat daftar remote di config (harus muncul sesuatu seperti "gdrive:")
-          echo "=== List remotes ==="
-          rclone --config rclone.conf listremotes
-
-          # 4. (Opsional) list folder teratas di Drive (ganti 'gdrive:' dengan nama remote kamu)
-          echo "=== Top-level on remote ==="
-          rclone --config rclone.conf lsd gdrive: || true
-
-
+          echo "Sync MLProject/mlruns -> gdrive:mlops/mlruns"
+          # copy: hanya kirim file yang baru/berubah, tidak menghapus yang lama di Drive
+          rclone --config rclone.conf copy MLProject/mlruns gdrive:mlops/mlruns -v
 
       # 10. Generate Docker context from MLflow model (Opsi 1)
       - name: Generate MLflow Docker context
