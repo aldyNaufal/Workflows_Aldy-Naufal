@@ -1,0 +1,128 @@
+name: CI - Train with MLflow Project (Advanced)
+
+on:
+  workflow_dispatch:   # bisa dijalankan manual
+  push:
+    paths:
+      - "MLProject/**"
+      - ".github/workflows/ci-mlproject.yml"
+
+jobs:
+  mlflow-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Set up job
+      - name: Run actions/checkout@v4
+        uses: actions/checkout@v4
+
+      # 2. Set up Python
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 3. Check Env
+      - name: Check Env
+        run: |
+          echo "Working directory: $(pwd)"
+          ls -R
+
+      # 4. Install dependencies (untuk mlflow CLI)
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mlflow==2.16.0
+
+      # 5. Set MLflow Tracking URI (lokal -> ./mlruns)
+      - name: Set MLflow Tracking URI
+        run: |
+          echo "MLFLOW_TRACKING_URI=file:$(pwd)/MLProject/mlruns" >> $GITHUB_ENV
+
+      # 6. Run mlflow project (ini step utama retraining)
+      - name: Run mlflow project
+        working-directory: MLProject
+        run: |
+          mlflow run . -e main
+
+      # 7. Get latest MLflow run_id (untuk build Docker)
+      - name: Get latest MLflow run_id
+        id: get_run
+        working-directory: MLProject
+        run: |
+          python - << 'PY'
+          import os
+          from pathlib import Path
+          import mlflow
+
+          tracking_uri = "file:" + str((Path.cwd() / "mlruns").resolve())
+          mlflow.set_tracking_uri(tracking_uri)
+
+          # ambil experiment default (id 0) atau pakai nama
+          client = mlflow.tracking.MlflowClient()
+          exp = client.get_experiment_by_name("genre-game-mlproject")
+          if exp is None:
+              exp = client.get_experiment("0")
+          runs = client.search_runs(
+              [exp.experiment_id],
+              order_by=["attributes.start_time DESC"],
+              max_results=1,
+          )
+          run_id = runs[0].info.run_id
+          print("Latest run_id:", run_id)
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a") as f:
+              f.write(f"run_id={run_id}\n")
+          PY
+
+      # 8. Install Python dependencies (untuk inference/test lokal, Skilled)
+      - name: Install Python dependencies
+        working-directory: MLProject
+        run: |
+          conda_file="conda.yaml"
+          pip install -r <(python - << 'PY'
+          import yaml
+          import sys
+          env = yaml.safe_load(open("conda.yaml"))
+          pkgs = [p for p in env.get("dependencies", []) if isinstance(p, dict) and "pip" in p]
+          if pkgs:
+              for pkg in pkgs[0]["pip"]:
+                  print(pkg)
+          PY
+          )
+
+      # 9. Upload artefak ke repositori (Skilled)
+      - name: Upload MLflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow_mlruns
+          path: MLProject/mlruns
+
+      # 10. Build Docker Model (Advanced)
+      - name: Build Docker Model
+        working-directory: MLProject
+        env:
+          RUN_ID: ${{ steps.get_run.outputs.run_id }}
+        run: |
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model:latest"
+          echo "Building docker image: $IMAGE_NAME from run_id=$RUN_ID"
+          mlflow models build-docker -m "runs:/$RUN_ID/model" -n "$IMAGE_NAME"
+
+      # 11. Log in to Docker Hub
+      - name: Log in to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      # 12. Tag Docker Image (tambahkan tag pakai commit SHA, optional)
+      - name: Tag Docker Image
+        run: |
+          IMAGE_BASE="${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model"
+          docker tag "$IMAGE_BASE:latest" "$IMAGE_BASE:${{ github.sha }}"
+
+      # 13. Push Docker Image (Advanced)
+      - name: Push Docker Image
+        run: |
+          IMAGE_BASE="${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model"
+          docker push "$IMAGE_BASE:latest"
+          docker push "$IMAGE_BASE:${{ github.sha }}"
