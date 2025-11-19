@@ -100,14 +100,27 @@ jobs:
           name: mlflow_mlruns
           path: MLProject/mlruns
 
+      # 9a. Archive MLflow mlruns jadi satu file .zip
+      - name: Archive MLflow mlruns
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip
+          cd MLProject
+          zip -r mlruns_${GITHUB_RUN_ID}.zip mlruns
+
       # 9b. Upload MLflow artifacts ke Google Drive
       - name: Upload MLflow artifacts to Google Drive
-        uses: adityaprasad2001/gdrive-upload-action@v1.0.4
+        uses: mathisve/gdrive-upload-action@main
         with:
-          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
-          filename: MLProject/mlruns
+          # Path file zip dari root repo
+          filename: MLProject/mlruns_${{ github.run_id }}.zip
+          # Nama file di Google Drive
+          name: mlruns_${{ github.run_id }}.zip
           folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
-          overwrite: "true"
+          credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
+          encoded: false
+          overwrite: true
+
 
 
       # 10. Generate Docker context from MLflow model (Opsi 1)
