@@ -43,7 +43,9 @@ jobs:
       - name: Run mlflow project
         working-directory: MLProject
         run: |
-          mlflow run . -e main
+          # Pakai env-manager=local supaya mlflow pakai env Python yang sudah di-setup,
+          # tidak mencoba conda "source activate" (yang bikin error di GitHub Actions)
+          mlflow run . -e main --env-manager=local
 
       # 7. Get latest MLflow run_id (untuk build Docker)
       - name: Get latest MLflow run_id
