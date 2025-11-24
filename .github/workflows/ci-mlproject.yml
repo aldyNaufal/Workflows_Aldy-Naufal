@@ -40,12 +40,15 @@ jobs:
           echo "MLFLOW_TRACKING_URI=file:$(pwd)/MLProject/mlruns" >> $GITHUB_ENV
 
       # 6. Run mlflow project (ini step utama retraining)
-      - name: Run mlflow project
+      - name: Run training (local only)
         working-directory: MLProject
         run: |
-          # Pakai env-manager=local supaya mlflow pakai env Python yang sudah di-setup,
-          # tidak mencoba conda "source activate" (yang bikin error di GitHub Actions)
-          mlflow run . -e main --env-manager=local
+          python - << 'PY'
+          from modelling import run_one_mode
+          # Jalankan hanya mode "local" supaya tracking ke file:./mlruns
+          run_one_mode("local")
+          PY
+
 
       # 7. Get latest MLflow run_id (untuk build Docker)
       - name: Get latest MLflow run_id

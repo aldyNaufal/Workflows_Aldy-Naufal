@@ -370,7 +370,7 @@ def run_one_mode(mode: str):
     # total kombinasi: 5 * 3 * 5 = 75 per mode
 
     if mode == "local":
-        setup_mlflow_local(experiment_name="genre_game_tuning_local")
+        setup_mlflow_local(experiment_name="genre-game-mlproject")
         run_prefix = "local"
         model_suffix = "local"
 
