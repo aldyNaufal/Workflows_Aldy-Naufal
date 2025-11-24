@@ -1,0 +1,10 @@
+Docker Hub image untuk serving model:
+
+Image name:
+aldy2802/genre-game-model:latest
+
+URL:
+https://hub.docker.com/r/aldy2802/genre-game-model
+
+Cara pull:
+docker pull aldy2802/genre-game-model:latest
